@@ -117,6 +117,7 @@ func parse(applicationFile string) (*application, error) {
 	var command string
 
 	reader := bufio.NewScanner(f)
+sc:
 	for reader.Scan() {
 		switch line := reader.Text(); {
 		case strings.HasPrefix(line, "NoDisplay=true"):
@@ -127,6 +128,8 @@ func parse(applicationFile string) (*application, error) {
 			hasApplication = true
 		case strings.HasPrefix(line, "Exec="):
 			_, command, _ = strings.Cut(line, "=")
+		case strings.TrimSpace(line) == "":
+			break sc // only read first block
 		}
 	}
 
