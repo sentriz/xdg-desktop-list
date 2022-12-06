@@ -32,17 +32,19 @@ func main() {
 	}
 
 	sort.Slice(applications, func(i, j int) bool {
-		return applications[i].path < applications[j].path
+		return applications[i].applicationFile < applications[j].applicationFile
 	})
 
 	for _, appl := range applications {
-		fmt.Fprintf(os.Stdout, "%s\t%s\n", appl.path, appl.command)
+		fmt.Fprintf(os.Stdout, "%s\t%s\t%s\n", appl.category, appl.name, appl.command)
 	}
 }
 
 type application struct {
-	path    string
-	command string
+	applicationFile string
+	category        category
+	name            string
+	command         string
 }
 
 func find(xdgDataDirs []string) ([]*application, error) {
@@ -137,8 +139,42 @@ sc:
 		return nil, nil
 	}
 
+	command = commandArgReplacer.Replace(command)
+	name := filepath.Base(applicationFile)
+	name = strings.TrimSuffix(name, desktopSuffix)
+
+	var categ category
+	if strings.HasPrefix(applicationFile, "/home") {
+		categ |= categoryUser
+	}
+	if strings.Contains(applicationFile, "/flatpak") {
+		categ |= categoryFlatpak
+	}
+
 	return &application{
-		path:    applicationFile,
-		command: commandArgReplacer.Replace(command),
+		applicationFile: applicationFile,
+		category:        categ,
+		name:            name,
+		command:         command,
 	}, nil
 }
+
+type category uint8
+
+func (c category) String() string {
+	var parts []string
+	if c&categoryUser != 0 {
+		parts = append(parts, "user")
+	} else {
+		parts = append(parts, "system")
+	}
+	if c&categoryFlatpak != 0 {
+		parts = append(parts, "flatpak")
+	}
+	return strings.Join(parts, " ")
+}
+
+const (
+	categoryUser category = 1 << iota
+	categoryFlatpak
+)
