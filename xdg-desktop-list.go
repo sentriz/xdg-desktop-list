@@ -32,7 +32,7 @@ func main() {
 	}
 
 	sort.Slice(applications, func(i, j int) bool {
-		return applications[i].path > applications[j].path
+		return applications[i].path < applications[j].path
 	})
 
 	for _, appl := range applications {
