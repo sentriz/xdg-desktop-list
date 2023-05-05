@@ -24,8 +24,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	xdgDataDirs := strings.Split(xdgDataDirsEnv, ":")
-	applications, err := find(xdgDataDirs)
+	xdgDataDirs := strings.Split(xdgDataDirsEnv, string(os.PathListSeparator))
+	applications, err := find(xdgDataDirs, 4)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "find paths: %v\n", err)
 		os.Exit(1)
@@ -47,12 +47,12 @@ type application struct {
 	command         string
 }
 
-func find(xdgDataDirs []string) ([]*application, error) {
+func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
 	applicationFiles := make(chan string)
 	applications := make(chan *application)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			for applicationFile := range applicationFiles {
@@ -106,6 +106,8 @@ var commandArgReplacer = strings.NewReplacer(
 	"%d", "", "%D", "", "%n", "", "%N", "",
 	"%i", "", "%c", "", "%k", "", "%v", "",
 	"%m", "", "@@u", "", "@@", "",
+
+	"\t", " ",
 )
 
 func parse(applicationFile string) (*application, error) {
