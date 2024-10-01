@@ -49,31 +49,6 @@ type application struct {
 
 func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
 	applicationFiles := make(chan string)
-	applications := make(chan *application)
-
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			for applicationFile := range applicationFiles {
-				appl, err := parse(applicationFile)
-				if err != nil {
-					log.Printf("error checking file %q: %v", applicationFile, err)
-					continue
-				}
-				if appl != nil {
-					applications <- appl
-				}
-			}
-			wg.Done()
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(applications)
-	}()
-
 	go func() {
 		for _, dataDir := range xdgDataDirs {
 			applicationDir := filepath.Join(dataDir, applicationsPath)
@@ -89,6 +64,30 @@ func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
 			}
 		}
 		close(applicationFiles)
+	}()
+
+	applications := make(chan *application)
+	go func() {
+		var wg sync.WaitGroup
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				for applicationFile := range applicationFiles {
+					appl, err := parse(applicationFile)
+					if err != nil {
+						log.Printf("error checking file %q: %v", applicationFile, err)
+						continue
+					}
+					if appl != nil {
+						applications <- appl
+					}
+				}
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+
+		close(applications)
 	}()
 
 	var results []*application
