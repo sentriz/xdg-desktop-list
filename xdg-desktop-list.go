@@ -2,11 +2,12 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -25,15 +26,12 @@ func main() {
 	}
 
 	xdgDataDirs := strings.Split(xdgDataDirsEnv, string(os.PathListSeparator))
-	applications, err := find(xdgDataDirs, 4)
+
+	applications, err := find(xdgDataDirs, 8)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "find paths: %v\n", err)
 		os.Exit(1)
 	}
-
-	sort.Slice(applications, func(i, j int) bool {
-		return applications[i].applicationFile < applications[j].applicationFile
-	})
 
 	for _, appl := range applications {
 		fmt.Fprintf(os.Stdout, "%s\t%s\t%s\n", appl.category, appl.name, appl.command)
@@ -41,6 +39,7 @@ func main() {
 }
 
 type application struct {
+	dirIndex        int
 	applicationFile string
 	category        category
 	name            string
@@ -48,9 +47,14 @@ type application struct {
 }
 
 func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
-	applicationFiles := make(chan string)
+	type applicationIndexed struct {
+		dirIndex int
+		path     string
+	}
+
+	applicationPaths := make(chan applicationIndexed)
 	go func() {
-		for _, dataDir := range xdgDataDirs {
+		for i, dataDir := range xdgDataDirs {
 			applicationDir := filepath.Join(dataDir, applicationsPath)
 			dirEnt, err := os.ReadDir(applicationDir)
 			if err != nil {
@@ -60,10 +64,14 @@ func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
 				if ent.IsDir() || !strings.HasSuffix(ent.Name(), desktopSuffix) {
 					continue
 				}
-				applicationFiles <- filepath.Join(applicationDir, ent.Name())
+				applicationPaths <- applicationIndexed{
+					dirIndex: i,
+					path:     filepath.Join(applicationDir, ent.Name()),
+				}
+
 			}
 		}
-		close(applicationFiles)
+		close(applicationPaths)
 	}()
 
 	applications := make(chan *application)
@@ -72,8 +80,8 @@ func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
 		for i := 0; i < numWorkers; i++ {
 			wg.Add(1)
 			go func() {
-				for applicationFile := range applicationFiles {
-					appl, err := parse(applicationFile)
+				for applicationFile := range applicationPaths {
+					appl, err := parse(applicationFile.path, applicationFile.dirIndex)
 					if err != nil {
 						log.Printf("error checking file %q: %v", applicationFile, err)
 						continue
@@ -91,9 +99,23 @@ func find(xdgDataDirs []string, numWorkers int) ([]*application, error) {
 	}()
 
 	var results []*application
+	var maxIndexes = map[string]int{}
+
 	for appl := range applications {
 		results = append(results, appl)
+		maxIndexes[appl.name] = max(maxIndexes[appl.name], appl.dirIndex)
 	}
+
+	results = slices.DeleteFunc(results, func(appl *application) bool {
+		return appl.dirIndex < maxIndexes[appl.name]
+	})
+
+	slices.SortFunc(results, func(a, b *application) int {
+		return cmp.Or(
+			cmp.Compare(a.dirIndex, b.dirIndex),
+			cmp.Compare(a.name, b.name),
+		)
+	})
 
 	return results, nil
 }
@@ -109,7 +131,7 @@ var commandArgReplacer = strings.NewReplacer(
 	"\t", " ",
 )
 
-func parse(applicationFile string) (*application, error) {
+func parse(applicationFile string, dirIndex int) (*application, error) {
 	f, err := os.Open(applicationFile)
 	if err != nil {
 		return nil, fmt.Errorf("open application file: %w", err)
@@ -153,6 +175,7 @@ sc:
 	}
 
 	return &application{
+		dirIndex:        dirIndex,
 		applicationFile: applicationFile,
 		category:        categ,
 		name:            name,

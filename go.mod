@@ -1,3 +1,3 @@
 module go.senan.xyz/xdg-desktop-list
 
-go 1.19
+go 1.23
